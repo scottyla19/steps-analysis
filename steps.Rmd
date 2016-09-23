@@ -1,0 +1,98 @@
+---
+title: '"Analyzing iPhone Steps with R'
+author: "Scott LaForest"
+date: "September 19, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(tibble.print_max = 200, tibble.print_min = 24)
+```
+##Getting the Data
+
+I was motivated by [this post](http://blog.yhat.com/posts/phone-steps-timeseries.html) from the yHat Blog. They worked through some analysis using Python and I thought I would try to translate it to R. By also writing this post in R markdown it gave me an opportunity to get more familar with R markdown as well. Thanks to the yHat post I started by downloading the [QS Access] (http://quantifiedself.com/access-app/app) app to get the data (csv) off of my phone. From there it is just a matter of reading it into RStudio and beginning my analysis.
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(sm)
+df <- read.csv("health-data.csv")
+head(df)
+```
+
+##Cleaning the Data
+
+As you can see the data is a little messy with the biggest items being:
+
+* steps are not integers
+* dates are not formatted as I would like
+
+```{r}
+#rename steps..count column to steps
+df <- rename(df, Steps = Steps..count.)
+
+#fix data types in df
+#convert all columns to strings
+df <- data.frame(lapply(df, as.character), stringsAsFactors=FALSE)
+
+#convert steps to integers
+df$Steps <- as.integer(df$Steps)
+
+#convert start and finish columns to dates.
+df$Start <- as.POSIXlt(df$Start,format='%d-%b-%Y %H:%M')
+df$Finish <- as.POSIXlt(df$Finish,format='%d-%b-%Y %H:%M')
+head(df)
+```
+
+That's a little better but I would still like a little more detail from the dates and times. Each date will broken into it's specific components of day, date, month, year and time. Also I created a variable for whether it is a weekend day or not.
+```{r}
+df$day <- weekdays(as.Date(df$Start))
+df$dayNum <- df$Start$wday
+df$isWknd <- df$day == "Saturday" | df$day == "Sunday"
+
+df$month <- month(as.Date(df$Start))
+df$date <- day(df$Start)
+df$year <-  year(df$Start)
+df$time <-  hour(df$Start)
+
+head(df)
+```
+That looks as clean as I'll need it now on to the fun stuff.
+
+##Visualizing my Steps
+
+I'll start by seeing the time of the day that is the busiest for me.
+```{r echo=FALSE}
+plot(Steps~time,data=df, main="Steps by Hour", xlab="Time of Day", ylab="Number of Steps", range = 2)
+
+
+```
+```{r}
+myvars <- names(df) %in% c("Start", "Finish") 
+newdf <- df[!myvars]
+group_by(newdf, time) %>% summarize(m = mean(Steps), med = median(Steps))
+
+```
+
+
+
+
+```{r}
+dailySteps <-data.frame(group_by_(newdf,.dots=c("day","date","month", "year", "dayNum")) %>% summarize(s = sum(Steps)))
+head(dailySteps)
+
+group_by(dailySteps, day) %>% summarize(m = mean(s), med = median(s))
+```
+
+```{r echo=FALSE}
+boxplot(s~day,data=dailySteps, main="Steps by Day", xlab="Day", ylab="Number of Steps")
+# create value labels 
+weekday.f <- factor(dailySteps$dayNum, levels= c(0,1,2,3,4,5,6),
+    labels = c("Sun", "Mon", "Tues", "Wed","Thur", "Fri", "Sat")) 
+sm.density.compare(dailySteps$s, dailySteps$dayNum)
+colfill<-c(2:(2+length(levels(weekday.f)))) 
+legend(locator(1), levels(weekday.f), lwd = .5,fill=colfill)
+
+```
+
